@@ -1,0 +1,107 @@
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+env/
+.env
+*.pyc
+
+# ===========================
+# Jupyter Notebooks
+# ===========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===========================
+# IDE
+# ===========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Thumbs.db
+*.log
+
+# ===========================
+# Data Files (Large files - download separately)
+# ===========================
+data/pgdata/
+data/minio/.minio.sys/
+data/*.csv
+!data/.gitkeep
+
+# ===========================
+# Model Artifacts
+# ===========================
+models/als_model/
+models/*.pkl
+models/*.joblib
+*.model
+*.ckpt
+
+# ===========================
+# Docker
+# ===========================
+*.pid
+
+# ===========================
+# Airflow
+# ===========================
+airflow/logs/
+airflow/*.db
+airflow/airflow.cfg
+
+# ===========================
+# Spark
+# ===========================
+spark-warehouse/
+metastore_db/
+derby.log
+
+# ===========================
+# Secrets & Credentials
+# ===========================
+*.pem
+*.key
+secrets/
+.secrets
+
+# ===========================
+# Temporary Files
+# ===========================
+tmp/
+temp/
+*.tmp
+*.bak
+data/minio/mooc-data/*

@@ -1,0 +1,198 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: recsys-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: recsys
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+
+  minio:
+    image: minio/minio:latest
+    container_name: recsys-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./data/minio:/data
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: recsys-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: recsys-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  airflow:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: recsys-airflow:latest
+    container_name: recsys-airflow
+    depends_on:
+      - postgres
+      - minio
+      - kafka
+      - spark-master
+    restart: unless-stopped
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      AIRFLOW__WEBSERVER__SECRET_KEY: change_me
+      # Service connection env vars
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DB: recsys
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: mooc-events
+      ARTIFACT_DIR: /opt/recsys-artifacts
+    volumes:
+      - airflow_home:/opt/airflow
+      - recsys_artifacts:/opt/recsys-artifacts
+      - ./airflow/dags:/opt/airflow/dags
+      - ./:/opt/bigdata-recsys
+    command: >
+      bash -c "
+      airflow db migrate &&
+      (airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true) &&
+      airflow scheduler &
+      exec airflow webserver --port 8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ===== Spark Cluster for ALS Training =====
+  spark-master:
+    image: apache/spark:3.5.3
+    container_name: recsys-spark-master
+    user: root
+    environment:
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8080
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_DIR: /tmp/spark-work
+      # Database connection for Spark jobs
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DB: recsys
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - ./:/opt/bigdata-recsys
+
+  spark-worker:
+    image: apache/spark:3.5.3
+    container_name: recsys-spark-worker
+    user: root
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_CORES: 2
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_DIR: /tmp/spark-work
+      # Database connection for Spark jobs
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DB: recsys
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    ports:
+      - "8082:8081"
+    volumes:
+      - ./:/opt/bigdata-recsys
+
+  # ===== Streamlit Monitoring Dashboard =====
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    image: recsys-dashboard:latest
+    container_name: recsys-dashboard
+    depends_on:
+      - postgres
+      - kafka
+    restart: unless-stopped
+    environment:
+      # PostgreSQL connection
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DB: recsys
+      # Kafka connection
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: mooc-events
+      # Service URLs (internal network)
+      MINIO_ENDPOINT: minio:9000
+      SPARK_MASTER_UI: http://spark-master:8080
+      AIRFLOW_UI: http://airflow:8080
+      # Artifact directory
+      ARTIFACT_DIR: /opt/recsys-artifacts
+    volumes:
+      - recsys_artifacts:/opt/recsys-artifacts
+      - ./dashboard:/app
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  pgdata:
+  minio:
+  kafka_data:
+  zookeeper_data:
+  airflow_home:
+  recsys_artifacts:
