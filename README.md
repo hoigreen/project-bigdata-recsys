@@ -74,6 +74,14 @@ A **Big Data Recommendation System** for Massive Open Online Courses (MOOC) buil
 - **Airflow Orchestration**: Scheduled and manual pipeline triggers
 - **Incremental Updates**: Support for continuous data ingestion
 
+### 🔁 Periodic Model Retraining (NEW)
+
+- **Scheduled Retraining**: Daily automatic model updates with fresh data from DB
+- **Model Versioning**: Timestamp-based versions with configurable retention
+- **Training History**: All metrics logged to PostgreSQL for tracking
+- **On-Demand Retraining**: Manual trigger with configurable hyperparameters
+- **Zero Downtime**: Consumer hot-reloads new model automatically
+
 ---
 
 ## 🛠️ Tech Stack
@@ -199,7 +207,7 @@ Open Streamlit Dashboard: <http://localhost:8501>
 
 ## 📋 Airflow DAGs
 
-### `recsys_pipeline` (Recommended)
+### `recsys_pipeline` (Main Pipeline)
 
 Complete pipeline: ETL → Train → Stream
 
@@ -207,17 +215,27 @@ Complete pipeline: ETL → Train → Stream
 load_users → load_interactions → [train_lgbm, spark_als_train] → training_complete → [run_producer, run_consumer]
 ```
 
-### `recsys_streaming_only`
+### `recsys_periodic_retrain` (Scheduled Retraining)
 
-Run streaming without retraining (assumes models exist)
+Automatic periodic retraining of LightGBM model with fresh data from DB
 
 ```
-[run_producer, run_consumer]
+check_data_freshness → retrain_lgbm → retrain_complete
 ```
 
-### `recsys_full_pipeline`
+**Schedule**: Daily at 2:00 AM (cron: `0 2 * * *`)
 
-Extended version with configurable streaming duration
+### `recsys_retrain_on_demand` (Manual Retraining)
+
+On-demand retraining with configurable hyperparameters
+
+**Parameters**:
+
+- `learning_rate`: 0.05 (default)
+- `num_leaves`: 31 (default)
+- `num_boost_round`: 500 (default)
+- `early_stopping`: 50 (default)
+- `notes`: Custom notes for training run
 
 ---
 
@@ -245,6 +263,17 @@ Extended version with configurable streaming duration
 ### `als_user_factors` / `als_item_factors`
 
 Latent factors from Spark ALS training stored as JSON arrays.
+
+### `model_training_history` (NEW)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| model_version | VARCHAR | Timestamp-based version (YYYYMMDD_HHMMSS) |
+| train_auc / valid_auc | DOUBLE | Training/validation AUC scores |
+| training_samples | INT | Number of training samples |
+| hyperparameters | TEXT | JSON of training hyperparameters |
+| training_duration_seconds | DOUBLE | Time taken to train |
+| is_active | BOOLEAN | Currently active model flag |
 
 ---
 
