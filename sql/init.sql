@@ -50,3 +50,37 @@ CREATE TABLE IF NOT EXISTS als_item_factors (
     course_id TEXT PRIMARY KEY,
     factors TEXT  -- JSON array of latent factors
 );
+
+-- Model training history table (for periodic retraining tracking)
+CREATE TABLE IF NOT EXISTS model_training_history (
+    id SERIAL PRIMARY KEY,
+    model_name VARCHAR(50) NOT NULL,           -- 'lgbm_dropout' or 'spark_als'
+    model_version VARCHAR(100) NOT NULL,        -- Timestamp-based version
+    training_samples INT,                       -- Number of training samples
+    validation_samples INT,                     -- Number of validation samples
+    train_auc DOUBLE PRECISION,                 -- Training AUC score
+    valid_auc DOUBLE PRECISION,                 -- Validation AUC score
+    train_logloss DOUBLE PRECISION,             -- Training log loss
+    valid_logloss DOUBLE PRECISION,             -- Validation log loss
+    train_accuracy DOUBLE PRECISION,            -- Training accuracy
+    valid_accuracy DOUBLE PRECISION,            -- Validation accuracy
+    num_features INT,                           -- Number of features used
+    num_courses INT,                            -- Number of unique courses
+    num_users INT,                              -- Number of unique users
+    hyperparameters TEXT,                       -- JSON of hyperparameters
+    artifact_path TEXT,                         -- Path to model artifacts
+    training_duration_seconds DOUBLE PRECISION, -- Time taken to train
+    data_snapshot_timestamp TIMESTAMP,          -- When data was fetched from DB
+    is_active BOOLEAN DEFAULT FALSE,            -- Is this the currently active model
+    created_at TIMESTAMP DEFAULT NOW(),
+    notes TEXT                                  -- Optional notes about this training run
+);
+
+-- Index for quick lookup of active model
+CREATE INDEX IF NOT EXISTS idx_model_training_active 
+ON model_training_history(model_name, is_active) 
+WHERE is_active = TRUE;
+
+-- Index for querying training history by date
+CREATE INDEX IF NOT EXISTS idx_model_training_created 
+ON model_training_history(model_name, created_at DESC);
