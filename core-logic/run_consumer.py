@@ -29,6 +29,8 @@ HISTORY_PATH = os.path.join(ARTIFACT_DIR, "user_history_snapshot.csv")
 LOG_PATH = os.path.join(ARTIFACT_DIR, "new_events_log.csv")
 ENCODER_PATH = os.path.join(ARTIFACT_DIR, "course_encoder.pkl")
 KNOWLEDGE_PATH = os.path.join(ARTIFACT_DIR, "knowledge_base.pkl")
+RECOMMENDATIONS_PATH = os.path.join(
+    ARTIFACT_DIR, "realtime_recommendations.json")
 
 # Global state
 bst = None
@@ -321,6 +323,9 @@ while True:
                 print(f"📊 Current Pass Prob: {pass_prob:.1f}%")
 
                 print(f"\n💡 SMART RECOMMENDATIONS:")
+
+                # Build recommendations list for dashboard
+                recommendations_list = []
                 if scored_candidates:
                     for i, (rec_course, score, is_retake) in enumerate(scored_candidates[:5], 1):
                         chance = (1 - score) * 100
@@ -329,8 +334,32 @@ while True:
                             "..." if len(rec_course) > 25 else rec_course
                         print(
                             f"   {i}. {short_rec:<28} | Chance: {chance:.1f}% {note}")
+
+                        # Add to recommendations list
+                        recommendations_list.append({
+                            "rank": i,
+                            "course_id": rec_course,
+                            "pass_chance": round(chance, 1),
+                            "is_retake": is_retake
+                        })
                 else:
                     print("   (Gathering data...)")
+
+                # Save recommendations to JSON for dashboard
+                try:
+                    rec_data = {
+                        "user_id": user,
+                        "current_course": course,
+                        "status": status_str,
+                        "current_pass_prob": round(pass_prob, 1),
+                        "recommendations": recommendations_list,
+                        "timestamp": time.time(),
+                        "event_count": event_count
+                    }
+                    with open(RECOMMENDATIONS_PATH, 'w') as f:
+                        json.dump(rec_data, f, indent=2)
+                except Exception as e:
+                    print(f"⚠️ Failed to save recommendations: {e}")
 
                 print("-" * 60 + "\n")
             else:
